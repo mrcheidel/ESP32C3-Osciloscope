@@ -4,6 +4,8 @@
 
 Osciloscopio digital completo para ESP32-C3 (QFN32) con interfaz web, captura en tiempo real y múltiples funcionalidades profesionales.
 
+
+
 ## ✨ Características
 
 - **Muestreo**: Hasta ~100 kHz (ajustable)
@@ -16,7 +18,8 @@ Osciloscopio digital completo para ESP32-C3 (QFN32) con interfaz web, captura en
 - **Mediciones automáticas**: Vpp, Vmax, Vmin, Vavg, Frecuencia
 - **Base de tiempo**: Ajustable de 1µs a 1ms
 
-## 🔌 Pinout ESP32-C3 (QFN32)
+## 🔌 Pinout ESP32-C3 (QFN32) 
+https://es.aliexpress.com/item/1005007892774677.html
 
 ```
 ┌─────────────────────────────────┐
@@ -187,13 +190,11 @@ Señal ──[R 10kΩ]──┬──[D Zener 3.3V]── GND
 - [Datasheet ESP32-C3](https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf)
 - [ESP32 ADC Calibration](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/api-reference/peripherals/adc.html)
 
-## 📄 Licencia
-
-Código libre para uso personal y educativo.
 
 ## 👨‍💻 Autor
 
-Creado para ESP32-C3 (QFN32) v0.4
+Claudio Heidel Schemberger
+
 
 ---
 
