@@ -42,6 +42,8 @@ https://es.aliexpress.com/item/1005007892774677.html
 
 3. **GND**: Tierra común con la señal a medir
 
+   ![alt text](doc/wifi-connected.jpeg)
+
 ## 🚀 Instalación
 
 ### Requisitos:
@@ -52,26 +54,35 @@ https://es.aliexpress.com/item/1005007892774677.html
 ### Pasos:
 
 1. **Configurar WiFi**:
+
+   Puedes crear una configuración fija como se puede ver a continuación... 
+   
    ```cpp
    const char* ssid = "TU_WIFI_SSID";
    const char* password = "TU_WIFI_PASSWORD";
    ```
+   ...o utilizar un archivo llamada config.json que se almacenara en una partición LittleFS
+   
+   ![alt text](doc/config-json.png)
+   
 
-2. **Seleccionar placa**:
+3. **Seleccionar placa**:
    - Placa: "ESP32C3 Dev Module"
    - Flash Size: 4MB
    - Partition Scheme: "Default 4MB with spiffs"
    - Core Debug Level: "None"
 
-3. **Compilar y subir** el código
+4. **Compilar y subir** el código
 
-4. **Conectar** al osciloscopio:
+5. **Conectar** al osciloscopio:
    - Si se conecta a WiFi: Abre la IP mostrada en el Serial Monitor
    - Si falla WiFi: Conecta a la red "ESP32-Oscilloscope" (password: 12345678) y abre 192.168.4.1
 
 ## 📊 Uso
 
 ### Interfaz Web
+
+![alt text](doc/web-uid.png)
 
 Accede a la interfaz web y encontrarás:
 
@@ -150,7 +161,7 @@ Accede a la interfaz web y encontrarás:
 ### El osciloscopio no se conecta al WiFi:
 - Verifica el SSID y password
 - Espera 15 segundos
-- Si sigue sin conectar, crea un AP automáticamente
+- Si sigue sin conectar, crea un AP automáticamente.
 
 ### La señal se ve distorsionada:
 - Verifica que la señal esté en el rango 0-3.3V
@@ -189,13 +200,19 @@ Señal ──[R 10kΩ]──┬──[D Zener 3.3V]── GND
 
 - [Datasheet ESP32-C3](https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf)
 - [ESP32 ADC Calibration](https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/api-reference/peripherals/adc.html)
+- [ESPConnect](https://thelastoutpostworkshop.github.io/ESPConnect/)
 
 
 ## 👨‍💻 Autor
 
 Claudio Heidel Schemberger
 
-
 ---
+
+## 👨‍💻 Compilación
+
+Es importante seleccionar el tipo de File System correcto donde guardar la configuración de WI-FI, esta la puedes editar usando ESPConnect.
+
+![alt text](doc/Arduino-IDE.png)
 
 **⚠️ ADVERTENCIA**: Nunca conectes voltajes superiores a 3.3V directamente al ESP32-C3. Usa divisores de voltaje o atenuadores para señales mayores.
