@@ -1,5 +1,5 @@
 /*
- * Osciloscopio Digital para ESP32-C3 (QFN32) v0.4
+ * Osciloscopio Digital para ESP32-C3 (QFN32) v0.5
  * 
  * Características:
  * - Muestreo de señales analógicas hasta ~100kHz
@@ -7,20 +7,31 @@
  * - Trigger configurable
  * - Base de tiempo ajustable
  * - Modo continuo y único
+ * - Pantalla OLED 0.42" con información de conexión
  * 
  * Pines:
  * - GPIO2 (ADC1_CH2): Canal de entrada analógica
  * - GPIO8: LED de estado
+ * - I2C (SDA/SCL): Pantalla OLED SSD1306 72x40
  */
 
 #include <WiFi.h>
 #include <WebServer.h>
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
+#include <U8g2lib.h>
+#include <Wire.h>
+#include <ArduinoJson.h>
+#include <LittleFS.h>
 
-// ===== CONFIGURACIÓN WiFi =====
-const char* ssid = "NOMBRE-DE-MI-RED-WIFI";
-const char* password = "PASSWORD DE MI RED WIFI";
+// ===== CONFIGURACIÓN PANTALLA OLED =====
+#define SDA_PIN 5  // Pin SDA del I2C
+#define SCL_PIN 6  // Pin SCL del I2C
+
+// Constructor para SSD1306 72x40 I2C
+// Ajusta el constructor según tu pantalla (HW I2C, dirección 0x3C)
+U8G2_SSD1306_72X40_ER_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+
 
 // ===== CONFIGURACIÓN DEL OSCILOSCOPIO =====
 #define ADC_PIN 2                    // GPIO2 = ADC1_CH2
@@ -41,6 +52,130 @@ volatile int timebaseUs = 100;          // Microsegundos entre muestras
 volatile bool continuousMode = true;
 
 esp_adc_cal_characteristics_t adc_chars;
+
+// ===== CONFIGURACIÓN WiFi =====
+//const char* ssid = "abantos2";
+//const char* password = "Parapente@50";
+
+String wifi_ssid;
+String wifi_password;
+
+bool loadConfig() {
+
+
+  if (!LittleFS.begin(true)){
+    Serial.println("Error montando LittleFS");
+    if(!LittleFS.format()){
+        Serial.println("Error formateando LittleFS");
+        return false;
+    }
+  }
+
+
+  if (!LittleFS.exists("/config.json")) {
+
+    Serial.println("config.json no existe, creando archivo...");
+
+    File f = LittleFS.open("/config.json", FILE_WRITE);
+    if (!f) return false;
+
+    f.println(R"rawliteral(
+{
+  "wifi": {
+    "ssid": "TU_WIFI",
+    "password": "TU_PASS"
+  }
+}
+)rawliteral");
+
+    f.close();
+    return false;
+  }
+
+  File file = LittleFS.open("/config.json", FILE_READ);
+  if (!file) return false;
+
+  StaticJsonDocument<256> doc;
+  DeserializationError err = deserializeJson(doc, file);
+  file.close();
+
+  if (err) {
+    Serial.println("Error parseando JSON");
+    return false;
+  }
+
+  wifi_ssid = doc["wifi"]["ssid"].as<String>();
+  wifi_password = doc["wifi"]["password"].as<String>();
+
+  return true;
+}
+
+
+
+
+// ===== FUNCIONES PANTALLA OLED =====
+
+void setupOLED() {
+  // Inicializar I2C con pines específicos del ESP32-C3
+  Wire.begin(SDA_PIN, SCL_PIN);
+  
+  u8g2.begin();
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_5x7_tf);  // Fuente pequeña para pantalla 72x40
+  u8g2.drawStr(0, 10, "ESP32-C3");
+  u8g2.drawStr(0, 20, "Oscilo");
+  u8g2.sendBuffer();
+  delay(1000);
+}
+
+void displayIP(IPAddress ip) {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_5x7_tf);
+  
+  u8g2.drawStr(0, 8, "WiFi OK");
+  u8g2.drawStr(0, 18, "IP:");
+  
+  // Convertir IP a string
+  String ipStr = ip.toString();
+  u8g2.drawStr(0, 28, ipStr.c_str());
+  
+  u8g2.sendBuffer();
+}
+
+void displayError(const char* message) {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_5x7_tf);
+  
+  u8g2.drawStr(0, 8, "ERROR:");
+  u8g2.drawStr(0, 20, message);
+  u8g2.drawStr(0, 32, "Modo AP");
+  
+  u8g2.sendBuffer();
+}
+
+void displayAPMode(IPAddress ip) {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_5x7_tf);
+  
+  u8g2.drawStr(0, 8, "Modo AP");
+  u8g2.drawStr(0, 18, "IP:");
+  
+  // Convertir IP a string
+  String ipStr = ip.toString();
+  u8g2.drawStr(0, 28, ipStr.c_str());
+  
+  u8g2.sendBuffer();
+}
+
+void displayConnecting() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_5x7_tf);
+  
+  u8g2.drawStr(0, 12, "Conectando");
+  u8g2.drawStr(0, 24, "WiFi...");
+  
+  u8g2.sendBuffer();
+}
 
 // ===== FUNCIONES DE CAPTURA =====
 
@@ -229,7 +364,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
     <div class="container">
-        <h1>🔬 ESP32-C3 Oscilloscope v0.4</h1>
+        <h1>🔬 ESP32-C3 Oscilloscope v0.5</h1>
         
         <div class="canvas-container">
             <canvas id="oscCanvas"></canvas>
@@ -267,13 +402,17 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             </div>
             
             <div class="control-group">
-                <label>Base de Tiempo: <span class="value-display" id="timebaseVal">100 µs</span></label>
-                <input type="range" id="timebase" min="1" max="1000" value="100" 
+                <label>Base de Tiempo
+                    <span class="value-display" id="timebaseVal">100 µs</span>
+                </label>
+                <input type="range" id="timebase" min="10" max="1000" value="100" 
                        oninput="updateTimebase(this.value)">
             </div>
             
             <div class="control-group">
-                <label>Nivel de Trigger: <span class="value-display" id="triggerVal">1.65 V</span></label>
+                <label>Trigger
+                    <span class="value-display" id="triggerVal">1.65 V</span>
+                </label>
                 <input type="range" id="trigger" min="0" max="4095" value="2048" 
                        oninput="updateTrigger(this.value)">
                 <button class="btn-secondary" onclick="toggleTrigger()">
@@ -282,32 +421,31 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             </div>
             
             <div class="control-group">
-                <label>Escala Vertical: <span class="value-display" id="scaleVal">1.0x</span></label>
-                <input type="range" id="scale" min="0.1" max="5" step="0.1" value="1" 
+                <label>Escala Vertical
+                    <span class="value-display" id="scaleVal">1x</span>
+                </label>
+                <input type="range" id="scale" min="0.5" max="5" step="0.1" value="1" 
                        oninput="updateScale(this.value)">
             </div>
         </div>
     </div>
-
+    
     <script>
         const canvas = document.getElementById('oscCanvas');
         const ctx = canvas.getContext('2d');
+        
+        // Ajustar resolución del canvas
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+        
+        let captureInterval = null;
         let continuousMode = true;
         let triggerEnabled = true;
         let triggerRising = true;
-        let captureInterval;
         let verticalScale = 1.0;
         
-        // Ajustar canvas al tamaño real
-        function resizeCanvas() {
-            canvas.width = canvas.offsetWidth;
-            canvas.height = canvas.offsetHeight;
-        }
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-        
         function drawGrid() {
-            ctx.strokeStyle = '#1a3a4a';
+            ctx.strokeStyle = '#333';
             ctx.lineWidth = 1;
             
             // Líneas verticales
@@ -326,26 +464,41 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 ctx.stroke();
             }
             
-            // Línea central
-            ctx.strokeStyle = '#2a5a6a';
+            // Ejes principales
+            ctx.strokeStyle = '#555';
             ctx.lineWidth = 2;
+            
+            // Línea central horizontal
             ctx.beginPath();
             ctx.moveTo(0, canvas.height / 2);
             ctx.lineTo(canvas.width, canvas.height / 2);
+            ctx.stroke();
+            
+            // Línea central vertical
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
             ctx.stroke();
         }
         
         function calculateStats(data) {
             if (data.length === 0) return;
             
-            let max = Math.max(...data);
-            let min = Math.min(...data);
-            let sum = data.reduce((a, b) => a + b, 0);
+            let min = data[0];
+            let max = data[0];
+            let sum = 0;
+            
+            for (let i = 0; i < data.length; i++) {
+                if (data[i] < min) min = data[i];
+                if (data[i] > max) max = data[i];
+                sum += data[i];
+            }
+            
             let avg = sum / data.length;
             
-            // Convertir a voltios (12 bits, 3.3V referencia)
-            let vMax = (max / 4095) * 3.3;
+            // Convertir a voltaje (3.3V / 4095)
             let vMin = (min / 4095) * 3.3;
+            let vMax = (max / 4095) * 3.3;
             let vAvg = (avg / 4095) * 3.3;
             let vpp = vMax - vMin;
             
@@ -551,19 +704,29 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   
-  Serial.println("\n\nESP32-C3 Oscilloscope v0.4");
+  loadConfig();
+
+  Serial.println("\n\nESP32-C3 Oscilloscope v0.5");
   Serial.println("===========================");
   
   // Configurar LED
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
   
+  // Configurar pantalla OLED
+  setupOLED();
+  
   // Configurar ADC
   setupADC();
   
+  // Mostrar mensaje de conexión
+  displayConnecting();
+  
   // Conectar a WiFi
   Serial.print("Conectando a WiFi");
-  WiFi.begin(ssid, password);
+  //WiFi.begin(ssid, password);
+  WiFi.begin(wifi_ssid.c_str(), wifi_password.c_str());
+
   
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 30) {
@@ -574,18 +737,33 @@ void setup() {
   }
   
   if (WiFi.status() == WL_CONNECTED) {
+    // Conexión exitosa
     Serial.println("\nWiFi conectado!");
     Serial.print("IP: ");
     Serial.println(WiFi.localIP());
+    
+    // Mostrar IP en pantalla OLED
+    displayIP(WiFi.localIP());
+    
     digitalWrite(LED_PIN, HIGH);
     delay(500);
     digitalWrite(LED_PIN, LOW);
   } else {
+    // Error de conexión
     Serial.println("\nError conectando WiFi");
     Serial.println("Iniciando AP...");
+    
+    // Mostrar error en pantalla
+    displayError("No WiFi");
+    delay(2000);
+    
+    // Iniciar modo AP
     WiFi.softAP("ESP32-Oscilloscope", "12345678");
     Serial.print("AP IP: ");
     Serial.println(WiFi.softAPIP());
+    
+    // Mostrar información de AP en pantalla
+    displayAPMode(WiFi.softAPIP());
   }
   
   // Configurar servidor web
