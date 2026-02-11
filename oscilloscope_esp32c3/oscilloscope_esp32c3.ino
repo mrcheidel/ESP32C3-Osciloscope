@@ -54,8 +54,8 @@ volatile bool continuousMode = true;
 esp_adc_cal_characteristics_t adc_chars;
 
 // ===== CONFIGURACIÓN WiFi =====
-//const char* ssid = "abantos2";
-//const char* password = "Parapente@50";
+//const char* ssid = "YOUR WIFI NAME";
+//const char* password = "YOUR WIFI PASS";
 
 String wifi_ssid;
 String wifi_password;
@@ -456,12 +456,26 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 ctx.stroke();
             }
             
-            // Líneas horizontales
-            for (let y = 0; y < canvas.height; y += canvas.height / 8) {
+            // Líneas horizontales con etiquetas de voltaje
+            const divisions = 8;
+            ctx.font = '11px monospace';
+            ctx.fillStyle = '#8888aa';
+            
+            for (let i = 0; i <= divisions; i++) {
+                let y = (canvas.height / divisions) * i;
+                
+                // Dibujar línea horizontal
                 ctx.beginPath();
                 ctx.moveTo(0, y);
                 ctx.lineTo(canvas.width, y);
                 ctx.stroke();
+                
+                // Calcular voltaje correspondiente (invertido porque Y crece hacia abajo)
+                let voltage = ((divisions - i) / divisions) * 3.3 * verticalScale;
+                
+                // Dibujar etiqueta de voltaje
+                let label = voltage.toFixed(1) + 'V';
+                ctx.fillText(label, 5, y - 3);
             }
             
             // Ejes principales
