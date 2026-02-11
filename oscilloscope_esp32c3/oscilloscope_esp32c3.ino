@@ -1,5 +1,5 @@
 /*
- * Osciloscopio Digital para ESP32-C3 (QFN32) v0.5
+ * Osciloscopio Digital para ESP32-C3 (QFN32) v0.6
  * 
  * Características:
  * - Muestreo de señales analógicas hasta ~100kHz
@@ -8,6 +8,7 @@
  * - Base de tiempo ajustable
  * - Modo continuo y único
  * - Pantalla OLED 0.42" con información de conexión
+ * - Editor web de configuración WiFi
  * 
  * Pines:
  * - GPIO2 (ADC1_CH2): Canal de entrada analógica
@@ -54,15 +55,10 @@ volatile bool continuousMode = true;
 esp_adc_cal_characteristics_t adc_chars;
 
 // ===== CONFIGURACIÓN WiFi =====
-//const char* ssid = "YOUR WIFI NAME";
-//const char* password = "YOUR WIFI PASS";
-
 String wifi_ssid;
 String wifi_password;
 
 bool loadConfig() {
-
-
   if (!LittleFS.begin(true)){
     Serial.println("Error montando LittleFS");
     if(!LittleFS.format()){
@@ -71,9 +67,7 @@ bool loadConfig() {
     }
   }
 
-
   if (!LittleFS.exists("/config.json")) {
-
     Serial.println("config.json no existe, creando archivo...");
 
     File f = LittleFS.open("/config.json", FILE_WRITE);
@@ -110,8 +104,27 @@ bool loadConfig() {
   return true;
 }
 
+bool saveConfig(String ssid, String password) {
+  StaticJsonDocument<256> doc;
+  doc["wifi"]["ssid"] = ssid;
+  doc["wifi"]["password"] = password;
 
+  File file = LittleFS.open("/config.json", FILE_WRITE);
+  if (!file) {
+    Serial.println("Error abriendo config.json para escritura");
+    return false;
+  }
 
+  if (serializeJson(doc, file) == 0) {
+    Serial.println("Error escribiendo JSON");
+    file.close();
+    return false;
+  }
+
+  file.close();
+  Serial.println("Configuración guardada exitosamente");
+  return true;
+}
 
 // ===== FUNCIONES PANTALLA OLED =====
 
@@ -271,6 +284,23 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             -webkit-text-fill-color: transparent;
             margin-bottom: 20px;
         }
+        .nav-links {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .nav-links a {
+            color: #667eea;
+            text-decoration: none;
+            margin: 0 15px;
+            padding: 8px 16px;
+            background: #16213e;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .nav-links a:hover {
+            background: #667eea;
+            color: white;
+        }
         .canvas-container {
             background: #16213e;
             border-radius: 10px;
@@ -292,18 +322,17 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             background: #16213e;
             padding: 20px;
             border-radius: 10px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
         }
         .control-group {
             background: #0f3460;
             padding: 15px;
             border-radius: 8px;
         }
-        .control-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #00d4ff;
+        .control-group h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+            font-size: 14px;
         }
         input[type="range"] {
             width: 100%;
@@ -312,131 +341,128 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         button {
             width: 100%;
             padding: 12px;
-            margin: 5px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
             border-radius: 5px;
+            color: white;
             font-weight: bold;
             cursor: pointer;
-            transition: all 0.3s;
-            font-size: 14px;
+            transition: transform 0.2s;
         }
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        .btn-primary:hover {
+        button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
         }
-        .btn-secondary {
-            background: #0f3460;
-            color: #00d4ff;
-        }
-        .btn-secondary:hover {
-            background: #1a4d7a;
+        button:active {
+            transform: translateY(0);
         }
         .stats {
-            display: flex;
-            justify-content: space-around;
-            margin-top: 15px;
-            padding: 15px;
-            background: #0f0f23;
-            border-radius: 5px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
         }
-        .stat {
+        .stat-box {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
             text-align: center;
         }
-        .stat-label {
+        .stat-box h4 {
+            color: #667eea;
             font-size: 12px;
-            color: #888;
+            margin-bottom: 5px;
         }
-        .stat-value {
+        .stat-box p {
             font-size: 20px;
             font-weight: bold;
-            color: #00d4ff;
+            color: #00ff88;
         }
         .value-display {
             color: #00ff88;
             font-weight: bold;
-            margin-left: 10px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🔬 ESP32-C3 Oscilloscope v0.5</h1>
+        <h1>🌊 ESP32-C3 Oscilloscope</h1>
+        
+        <div class="nav-links">
+            <a href="/">Osciloscopio</a>
+            <a href="/config">⚙️ Configuración WiFi</a>
+        </div>
         
         <div class="canvas-container">
-            <canvas id="oscCanvas"></canvas>
-            <div class="stats">
-                <div class="stat">
-                    <div class="stat-label">Vpp</div>
-                    <div class="stat-value" id="vpp">0.00 V</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-label">Vmax</div>
-                    <div class="stat-value" id="vmax">0.00 V</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-label">Vmin</div>
-                    <div class="stat-value" id="vmin">0.00 V</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-label">Vavg</div>
-                    <div class="stat-value" id="vavg">0.00 V</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-label">Frecuencia</div>
-                    <div class="stat-value" id="freq">0 Hz</div>
-                </div>
-            </div>
+            <canvas id="waveform"></canvas>
         </div>
         
         <div class="controls">
             <div class="control-group">
-                <label>Captura</label>
-                <button class="btn-primary" onclick="startCapture()">▶ Capturar</button>
-                <button class="btn-secondary" onclick="toggleMode()">
-                    <span id="modeText">Modo: Continuo</span>
-                </button>
-            </div>
-            
-            <div class="control-group">
-                <label>Base de Tiempo
-                    <span class="value-display" id="timebaseVal">100 µs</span>
-                </label>
+                <h3>Base de Tiempo</h3>
                 <input type="range" id="timebase" min="10" max="1000" value="100" 
                        oninput="updateTimebase(this.value)">
+                <span class="value-display" id="timebaseVal">100 µs</span>
             </div>
             
             <div class="control-group">
-                <label>Trigger
-                    <span class="value-display" id="triggerVal">1.65 V</span>
-                </label>
+                <h3>Nivel de Trigger</h3>
                 <input type="range" id="trigger" min="0" max="4095" value="2048" 
                        oninput="updateTrigger(this.value)">
-                <button class="btn-secondary" onclick="toggleTrigger()">
-                    <span id="triggerText">Trigger: ON ↑</span>
-                </button>
+                <span class="value-display" id="triggerVal">1.65 V</span>
             </div>
             
             <div class="control-group">
-                <label>Escala Vertical
-                    <span class="value-display" id="scaleVal">1x</span>
-                </label>
-                <input type="range" id="scale" min="0.5" max="5" step="0.1" value="1" 
+                <h3>Escala Vertical</h3>
+                <input type="range" id="scale" min="0.5" max="3" step="0.1" value="1" 
                        oninput="updateScale(this.value)">
+                <span class="value-display" id="scaleVal">1x</span>
+            </div>
+            
+            <div class="control-group">
+                <button onclick="startCapture()">▶ Capturar</button>
+            </div>
+            
+            <div class="control-group">
+                <button onclick="toggleMode()" id="modeBtn">Modo: Continuo</button>
+            </div>
+            
+            <div class="control-group">
+                <button onclick="toggleTrigger()" id="triggerBtn">Trigger: ON ↑</button>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-box">
+                <h4>V MAX</h4>
+                <p id="vmax">0.00 V</p>
+            </div>
+            <div class="stat-box">
+                <h4>V MIN</h4>
+                <p id="vmin">0.00 V</p>
+            </div>
+            <div class="stat-box">
+                <h4>V AVG</h4>
+                <p id="vavg">0.00 V</p>
+            </div>
+            <div class="stat-box">
+                <h4>V P-P</h4>
+                <p id="vpp">0.00 V</p>
+            </div>
+            <div class="stat-box">
+                <h4>FRECUENCIA</h4>
+                <p id="freq">0 Hz</p>
             </div>
         </div>
     </div>
     
     <script>
-        const canvas = document.getElementById('oscCanvas');
+        const canvas = document.getElementById('waveform');
         const ctx = canvas.getContext('2d');
         
-        // Ajustar resolución del canvas
-        canvas.width = canvas.offsetWidth;
-        canvas.height = canvas.offsetHeight;
+        canvas.width = 1000;
+        canvas.height = 400;
         
         let captureInterval = null;
         let continuousMode = true;
@@ -445,75 +471,37 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         let verticalScale = 1.0;
         
         function drawGrid() {
-            ctx.strokeStyle = '#333';
+            ctx.strokeStyle = '#1a3a4a';
             ctx.lineWidth = 1;
             
-            // Líneas verticales
-            for (let x = 0; x < canvas.width; x += canvas.width / 10) {
+            for (let i = 0; i <= 10; i++) {
+                let y = (canvas.height / 10) * i;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            
+            for (let i = 0; i <= 10; i++) {
+                let x = (canvas.width / 10) * i;
                 ctx.beginPath();
                 ctx.moveTo(x, 0);
                 ctx.lineTo(x, canvas.height);
                 ctx.stroke();
             }
-            
-            // Líneas horizontales con etiquetas de voltaje
-            const divisions = 8;
-            ctx.font = '11px monospace';
-            ctx.fillStyle = '#8888aa';
-            
-            for (let i = 0; i <= divisions; i++) {
-                let y = (canvas.height / divisions) * i;
-                
-                // Dibujar línea horizontal
-                ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(canvas.width, y);
-                ctx.stroke();
-                
-                // Calcular voltaje correspondiente (invertido porque Y crece hacia abajo)
-                let voltage = ((divisions - i) / divisions) * 3.3 * verticalScale;
-                
-                // Dibujar etiqueta de voltaje
-                let label = voltage.toFixed(1) + 'V';
-                ctx.fillText(label, 5, y - 3);
-            }
-            
-            // Ejes principales
-            ctx.strokeStyle = '#555';
-            ctx.lineWidth = 2;
-            
-            // Línea central horizontal
-            ctx.beginPath();
-            ctx.moveTo(0, canvas.height / 2);
-            ctx.lineTo(canvas.width, canvas.height / 2);
-            ctx.stroke();
-            
-            // Línea central vertical
-            ctx.beginPath();
-            ctx.moveTo(canvas.width / 2, 0);
-            ctx.lineTo(canvas.width / 2, canvas.height);
-            ctx.stroke();
         }
         
         function calculateStats(data) {
             if (data.length === 0) return;
             
-            let min = data[0];
-            let max = data[0];
-            let sum = 0;
-            
-            for (let i = 0; i < data.length; i++) {
-                if (data[i] < min) min = data[i];
-                if (data[i] > max) max = data[i];
-                sum += data[i];
-            }
-            
+            let sum = data.reduce((a, b) => a + b, 0);
             let avg = sum / data.length;
-            
-            // Convertir a voltaje (3.3V / 4095)
-            let vMin = (min / 4095) * 3.3;
-            let vMax = (max / 4095) * 3.3;
             let vAvg = (avg / 4095) * 3.3;
+            
+            let max = Math.max(...data);
+            let min = Math.min(...data);
+            let vMax = (max / 4095) * 3.3;
+            let vMin = (min / 4095) * 3.3;
             let vpp = vMax - vMin;
             
             document.getElementById('vmax').textContent = vMax.toFixed(2) + ' V';
@@ -607,7 +595,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         
         function toggleMode() {
             continuousMode = !continuousMode;
-            document.getElementById('modeText').textContent = 
+            document.getElementById('modeBtn').textContent = 
                 'Modo: ' + (continuousMode ? 'Continuo' : 'Único');
             
             if (!continuousMode && captureInterval) {
@@ -632,12 +620,12 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         function toggleTrigger() {
             if (triggerEnabled) {
                 triggerRising = !triggerRising;
-                document.getElementById('triggerText').textContent = 
+                document.getElementById('triggerBtn').textContent = 
                     'Trigger: ON ' + (triggerRising ? '↑' : '↓');
                 fetch('/settrigger?rising=' + (triggerRising ? '1' : '0'));
             } else {
                 triggerEnabled = true;
-                document.getElementById('triggerText').textContent = 'Trigger: ON ↑';
+                document.getElementById('triggerBtn').textContent = 'Trigger: ON ↑';
                 fetch('/settrigger?enable=1');
             }
         }
@@ -655,8 +643,335 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
+const char CONFIG_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración WiFi - ESP32-C3</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            text-align: center;
+            color: #0f3460;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 30px;
+        }
+        .nav-links {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .nav-links a {
+            color: #667eea;
+            text-decoration: none;
+            margin: 0 15px;
+            padding: 8px 16px;
+            background: #16213e;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .nav-links a:hover {
+            background: #667eea;
+            color: white;
+        }
+        .config-card {
+            background: #16213e;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        label {
+            display: block;
+            color: #667eea;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px 15px;
+            background: #0f3460;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            color: #eee;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        button {
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-save {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-save:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-reload {
+            background: #0f3460;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        .btn-reload:hover {
+            background: #667eea;
+            color: white;
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .message.success {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid #00ff88;
+            color: #00ff88;
+        }
+        .message.error {
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid #ff6b6b;
+            color: #ff6b6b;
+        }
+        .info-box {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .info-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .info-box p {
+            color: #aaa;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .toggle-password {
+            position: relative;
+        }
+        .toggle-password button {
+            position: absolute;
+            right: 10px;
+            top: 38px;
+            background: transparent;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ Configuración WiFi</h1>
+        
+        <div class="nav-links">
+            <a href="/">Osciloscopio</a>
+            <a href="/config">Configuración WiFi</a>
+        </div>
+        
+        <div class="config-card">
+            <div id="message" class="message"></div>
+            
+            <form id="configForm">
+                <div class="form-group">
+                    <label for="ssid">Nombre de Red (SSID)</label>
+                    <input type="text" id="ssid" name="ssid" placeholder="Mi_Red_WiFi" required>
+                </div>
+                
+                <div class="form-group toggle-password">
+                    <label for="password">Contraseña WiFi</label>
+                    <input type="password" id="password" name="password" placeholder="********" required>
+                    <button type="button" onclick="togglePassword()">👁️</button>
+                </div>
+                
+                <div class="btn-group">
+                    <button type="submit" class="btn-save">💾 Guardar</button>
+                    <button type="button" class="btn-reload" onclick="loadConfig()">🔄 Recargar</button>
+                </div>
+            </form>
+            
+            <div class="info-box">
+                <h3>ℹ️ Información importante</h3>
+                <p>
+                    Después de guardar la configuración, el ESP32 necesitará reiniciarse para conectarse 
+                    a la nueva red WiFi. Presiona el botón de reset después de guardar.
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let passwordVisible = false;
+        
+        function togglePassword() {
+            const passwordInput = document.getElementById('password');
+            passwordVisible = !passwordVisible;
+            passwordInput.type = passwordVisible ? 'text' : 'password';
+        }
+        
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + type;
+            messageDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        async function loadConfig() {
+            try {
+                const response = await fetch('/getconfig');
+                const data = await response.json();
+                
+                if (data.success) {
+                    document.getElementById('ssid').value = data.ssid || '';
+                    document.getElementById('password').value = data.password || '';
+                    showMessage('Configuración cargada correctamente', 'success');
+                } else {
+                    showMessage('Error al cargar la configuración', 'error');
+                }
+            } catch (error) {
+                showMessage('Error de conexión', 'error');
+                console.error('Error:', error);
+            }
+        }
+        
+        document.getElementById('configForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const ssid = document.getElementById('ssid').value;
+            const password = document.getElementById('password').value;
+            
+            if (!ssid || !password) {
+                showMessage('Por favor completa todos los campos', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/saveconfig', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `ssid=${encodeURIComponent(ssid)}&password=${encodeURIComponent(password)}`
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage('✅ Configuración guardada. Por favor reinicia el ESP32.', 'success');
+                } else {
+                    showMessage('❌ Error al guardar la configuración', 'error');
+                }
+            } catch (error) {
+                showMessage('❌ Error de conexión', 'error');
+                console.error('Error:', error);
+            }
+        });
+        
+        // Cargar la configuración actual al iniciar
+        window.addEventListener('load', loadConfig);
+    </script>
+</body>
+</html>
+)rawliteral";
+
 void handleRoot() {
   server.send_P(200, "text/html", INDEX_HTML);
+}
+
+void handleConfig() {
+  server.send_P(200, "text/html", CONFIG_HTML);
+}
+
+void handleGetConfig() {
+  File file = LittleFS.open("/config.json", FILE_READ);
+  if (!file) {
+    server.send(200, "application/json", "{\"success\":false}");
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  DeserializationError err = deserializeJson(doc, file);
+  file.close();
+
+  if (err) {
+    server.send(200, "application/json", "{\"success\":false}");
+    return;
+  }
+
+  String response = "{\"success\":true,";
+  response += "\"ssid\":\"" + doc["wifi"]["ssid"].as<String>() + "\",";
+  response += "\"password\":\"" + doc["wifi"]["password"].as<String>() + "\"}";
+  
+  server.send(200, "application/json", response);
+}
+
+void handleSaveConfig() {
+  if (!server.hasArg("ssid") || !server.hasArg("password")) {
+    server.send(400, "application/json", "{\"success\":false,\"error\":\"Missing parameters\"}");
+    return;
+  }
+
+  String ssid = server.arg("ssid");
+  String password = server.arg("password");
+
+  if (saveConfig(ssid, password)) {
+    server.send(200, "application/json", "{\"success\":true}");
+    
+    // Actualizar variables globales
+    wifi_ssid = ssid;
+    wifi_password = password;
+  } else {
+    server.send(500, "application/json", "{\"success\":false,\"error\":\"Failed to save\"}");
+  }
 }
 
 void handleCapture() {
@@ -720,7 +1035,7 @@ void setup() {
   
   loadConfig();
 
-  Serial.println("\n\nESP32-C3 Oscilloscope v0.5");
+  Serial.println("\n\nESP32-C3 Oscilloscope v0.6");
   Serial.println("===========================");
   
   // Configurar LED
@@ -738,10 +1053,8 @@ void setup() {
   
   // Conectar a WiFi
   Serial.print("Conectando a WiFi");
-  //WiFi.begin(ssid, password);
   WiFi.begin(wifi_ssid.c_str(), wifi_password.c_str());
 
-  
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 30) {
     delay(500);
@@ -782,6 +1095,9 @@ void setup() {
   
   // Configurar servidor web
   server.on("/", handleRoot);
+  server.on("/config", handleConfig);
+  server.on("/getconfig", handleGetConfig);
+  server.on("/saveconfig", handleSaveConfig);
   server.on("/capture", handleCapture);
   server.on("/data", handleData);
   server.on("/settimebase", handleSetTimebase);
@@ -790,6 +1106,7 @@ void setup() {
   
   server.begin();
   Serial.println("Servidor web iniciado");
+  Serial.println("Accede a /config para configurar WiFi");
   Serial.println("===========================\n");
 }
 
