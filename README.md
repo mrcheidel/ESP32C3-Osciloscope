@@ -82,7 +82,9 @@ https://es.aliexpress.com/item/1005007892774677.html
 
 ### Interfaz Web
 
-![alt text](doc/web-uid.png)
+![Osciloscopio](doc/web-uid-osciloscope.png)
+
+![Configuracion](doc/web-uid-config.png)
 
 Accede a la interfaz web y encontrarás:
 
@@ -101,6 +103,10 @@ Accede a la interfaz web y encontrarás:
    - **Nivel de Trigger**: Ajusta el voltaje de disparo (0-3.3V)
    - **Trigger ON/OFF**: Activa/desactiva y cambia flanco (↑/↓)
    - **Escala Vertical**: Zoom en el eje Y (0.1x - 5x)
+   
+4. **Configuración**:
+   - **WI-FI**: Configuración del nombre de Red WiFi y contraseña
+   
 
 ### Ejemplos de Medición
 
